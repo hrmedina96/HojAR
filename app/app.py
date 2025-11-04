@@ -7,7 +7,9 @@ import io, os, gc
 app = Flask(__name__)
 
 # Ruta al modelo TorchScript
-MODEL_PATH = os.path.join(os.path.dirname(__file__), 'model', 'leaf_model.pt')
+MODEL_PATH = os.path.join(os.path.dirname(__file__), 'model', 'leaf_model_ultra.pt')
+
+
 
 # Transformaciones de imagen
 transform = transforms.Compose([
@@ -28,25 +30,32 @@ def predict():
             return jsonify({'error': 'No se envió ninguna imagen'})
 
         file = request.files['file']
-        img = Image.open(io.BytesIO(file.read())).convert('RGB')
-        img_t = transform(img).unsqueeze(0)
+        img_bytes = file.read()
+        img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+        img_t = transform(img).unsqueeze(0).half()  # 🧠 Convertir imagen a float16
 
-        # Cargar modelo TorchScript en CPU
+        # ✅ Cargar modelo TorchScript optimizado
         model = torch.jit.load(MODEL_PATH, map_location='cpu')
         model.eval()
 
+        # Inferencia
         with torch.no_grad():
             outputs = model(img_t)
             pred = torch.argmax(outputs, 1).item()
 
-        # 🔹 Mapeo de clases (según tu modelo)
-        class_names = ['Chivato', 'Lapacho', 'Maracuyá', 'Pata de Vaca']
+        # Limpieza de memoria
+        del model, img_t, outputs
+        torch.cuda.empty_cache()
 
-        # Enviar respuesta
-        return jsonify({'prediction': class_names[pred]})
+        # 🌿 Etiquetas de las clases
+        labels = ["Chivato", "Lapacho", "Maracuyá", "Pata de Vaca"]
+        predicted_label = labels[pred] if pred < len(labels) else "Desconocida"
+
+        return jsonify({'prediction': predicted_label})
 
     except Exception as e:
         return jsonify({'error': str(e)})
+
 
 
 if __name__ == '__main__':
